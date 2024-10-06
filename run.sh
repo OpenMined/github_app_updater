@@ -25,10 +25,31 @@ if [ ! -f "github_apps.csv" ]; then
     exit 1
 fi
 
+# Function to check if it's time to update a repository
+should_update() {
+    repo_name="$1"
+    update_frequency="$2"
+    last_update_file=".last_update_$repo_name"
+    
+    # If the last update file doesn't exist, it's time to update
+    if [ ! -f "$last_update_file" ]; then
+        return 0
+    fi
+    
+    last_update=$(cat "$last_update_file")
+    current_time=$(date +%s)
+    time_since_last_update=$((current_time - last_update))
+    
+    # Check if enough time has passed since the last update
+    [ "$time_since_last_update" -ge "$update_frequency" ]
+}
+
 # Read the CSV file line by line
-while IFS= read -r repo_url || [ -n "$repo_url" ]; do
+while IFS=',' read -r repo_url update_frequency update_type || [ -n "$repo_url" ]; do
     # Remove any leading/trailing whitespace
     repo_url=$(echo "$repo_url" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    update_frequency=$(echo "$update_frequency" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    update_type=$(echo "$update_type" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
     
     # Skip empty lines
     if [ -z "$repo_url" ]; then
@@ -39,22 +60,52 @@ while IFS= read -r repo_url || [ -n "$repo_url" ]; do
     repo_name=$(echo "$repo_url" | sed -e 's/.*\///' -e 's/\.git$//')
     repo_path="../$repo_name"
     
+    # Check if it's time to update this repository
+    if ! should_update "$repo_name" "$update_frequency"; then
+        continue
+    fi
+    
     echo "Processing repository: $repo_name"
     echo "Local path: $repo_path"
+    echo "Update frequency: every $update_frequency seconds"
+    echo "Update type: $update_type"
     
-    # Remove existing repository if it exists
+    # Check if the repository already exists
     if [ -d "$repo_path" ]; then
-        echo "Removing existing repository at $repo_path"
-        rm -rf "$repo_path"
+        if [ "$update_type" = "REPLACE" ]; then
+            echo "Removing existing repository at $repo_path"
+            rm -rf "$repo_path"
+            # Clone the repository
+            echo "Cloning $repo_url to $repo_path"
+            if git clone "$repo_url" "$repo_path"; then
+                echo "Successfully cloned $repo_name"
+            else
+                echo "Failed to clone $repo_name"
+            fi
+        elif [ "$update_type" = "GIT PULL" ]; then
+            echo "Updating existing repository at $repo_path"
+            cd "$repo_path"
+            if git pull; then
+                echo "Successfully updated $repo_name"
+            else
+                echo "Failed to update $repo_name"
+            fi
+            cd - > /dev/null
+        else
+            echo "Invalid update type for $repo_name: $update_type"
+        fi
+    else
+        # Clone the repository
+        echo "Cloning $repo_url to $repo_path"
+        if git clone "$repo_url" "$repo_path"; then
+            echo "Successfully cloned $repo_name"
+        else
+            echo "Failed to clone $repo_name"
+        fi
     fi
     
-    # Clone the repository
-    echo "Cloning $repo_url to $repo_path"
-    if git clone "$repo_url" "$repo_path"; then
-        echo "Successfully cloned $repo_name"
-    else
-        echo "Failed to clone $repo_name"
-    fi
+    # Update the last update time for this repository
+    date +%s > ".last_update_$repo_name"
     
     echo "-----------------------------------"
 done < "github_apps.csv"
