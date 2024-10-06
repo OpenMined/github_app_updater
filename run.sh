@@ -25,18 +25,37 @@ if [ ! -f "github_apps.csv" ]; then
     exit 1
 fi
 
+LAST_UPDATE_FILE=".last_updates"
+
+# Function to get the last update time for a repository
+get_last_update() {
+    repo_name="$1"
+    if [ -f "$LAST_UPDATE_FILE" ]; then
+        grep "^$repo_name," "$LAST_UPDATE_FILE" | cut -d',' -f2
+    fi
+}
+
+# Function to set the last update time for a repository
+set_last_update() {
+    repo_name="$1"
+    current_time=$(date +%s)
+    if [ -f "$LAST_UPDATE_FILE" ]; then
+        sed -i.bak "/^$repo_name,/d" "$LAST_UPDATE_FILE"
+    fi
+    echo "$repo_name,$current_time" >> "$LAST_UPDATE_FILE"
+}
+
 # Function to check if it's time to update a repository
 should_update() {
     repo_name="$1"
     update_frequency="$2"
-    last_update_file=".last_update_$repo_name"
+    last_update=$(get_last_update "$repo_name")
     
-    # If the last update file doesn't exist, it's time to update
-    if [ ! -f "$last_update_file" ]; then
+    # If there's no last update time, it's time to update
+    if [ -z "$last_update" ]; then
         return 0
     fi
     
-    last_update=$(cat "$last_update_file")
     current_time=$(date +%s)
     time_since_last_update=$((current_time - last_update))
     
@@ -62,6 +81,7 @@ while IFS=',' read -r repo_url update_frequency update_type || [ -n "$repo_url" 
     
     # Check if it's time to update this repository
     if ! should_update "$repo_name" "$update_frequency"; then
+        echo "Skipping $repo_name, not time to update yet"
         continue
     fi
     
@@ -105,7 +125,7 @@ while IFS=',' read -r repo_url update_frequency update_type || [ -n "$repo_url" 
     fi
     
     # Update the last update time for this repository
-    date +%s > ".last_update_$repo_name"
+    set_last_update "$repo_name"
     
     echo "-----------------------------------"
 done < "github_apps.csv"
