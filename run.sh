@@ -105,6 +105,15 @@ while IFS=',' read -r repo_url update_frequency update_type || [ -n "$repo_url" 
         elif [ "$update_type" = "GIT PULL" ]; then
             echo "Updating existing repository at $repo_path"
             cd "$repo_path"
+            # Commit any changes before pulling
+            if [ -n "$(git status --porcelain)" ]; then
+                echo "Changes detected, committing before pull"
+                git add .
+                git commit -m "Auto-commit before pull"
+            else
+                echo "No changes to commit"
+            fi
+            # Now perform the pull
             if git pull; then
                 echo "Successfully updated $repo_name"
             else
